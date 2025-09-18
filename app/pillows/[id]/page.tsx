@@ -34,6 +34,7 @@ interface Product {
   firmness?: string[] | string
   specifications?: Record<string, any> | string
   category?: string
+  stock?: number
 }
 
 const safeParseJson = (value: unknown): unknown => {
@@ -44,15 +45,22 @@ const safeParseJson = (value: unknown): unknown => {
     return value
   }
 }
+
 const flattenToStringArray = (input: unknown): string[] => {
   const result: string[] = []
   const walk = (val: unknown) => {
     const maybeParsed = typeof val === "string" && (val.trim().startsWith("[") || val.trim().startsWith("{")) ? safeParseJson(val) : val
-    if (Array.isArray(maybeParsed)) for (const item of maybeParsed) walk(item)
-    else if (typeof maybeParsed === "string") { const t = maybeParsed.trim(); if (t) result.push(t) }
+    if (Array.isArray(maybeParsed)) {
+      for (const item of maybeParsed) walk(item)
+    } else if (typeof maybeParsed === "string") { 
+      const t = maybeParsed.trim()
+      if (t) result.push(t)
+    }
   }
-  walk(input); return Array.from(new Set(result))
+  walk(input)
+  return Array.from(new Set(result))
 }
+
 const resolveImageSrc = (img: any): string => {
   if (!img) return "/placeholder.svg"
   if (typeof img === "string") {
@@ -81,48 +89,125 @@ export default function ProductDetailFromCategoryPage() {
   useEffect(() => {
     const id = String(params.id)
     const fetchById = async () => {
-      setLoading(true); setError(null)
+      setLoading(true)
+      setError(null)
       try {
         const res = await fetch(`${API_BASE}/api/v1/products/${id}`)
         if (!res.ok) throw new Error(`Failed to fetch product: ${res.status}`)
         const body = await res.json()
-        const p: Product = body?.data?.product || body?.product || body
+        
+        // Handle different API response structures
+        const p: Product = body?.data?.product || body?.product || body?.data || body
+        
+        console.log("Raw API Response:", body) // Debug log
+        console.log("Processed Product:", p) // Debug log
+        
+        // Process images
         const images = Array.isArray(p?.images) ? p.images : []
-        const features = Array.isArray(p?.features) ? flattenToStringArray(p.features) : typeof p?.features === "string" ? flattenToStringArray([p.features]) : []
-        const firmness = Array.isArray(p?.firmness) ? flattenToStringArray(p.firmness) : typeof p?.firmness === "string" ? flattenToStringArray([p.firmness]) : []
+        
+        // Process features with better error handling
+        const features = Array.isArray(p?.features) 
+          ? flattenToStringArray(p.features) 
+          : typeof p?.features === "string" 
+          ? flattenToStringArray([p.features]) 
+          : []
+        
+        // Process firmness with better error handling
+        const firmness = Array.isArray(p?.firmness) 
+          ? flattenToStringArray(p.firmness) 
+          : typeof p?.firmness === "string" 
+          ? flattenToStringArray([p.firmness]) 
+          : []
+        
+        // Process sizes - handle both string arrays and object arrays
+        let sizes: string[] = []
+        if (Array.isArray(p?.sizes)) {
+          sizes = p.sizes.map(size => 
+            typeof size === "string" ? size : size?.name || ""
+          ).filter(Boolean)
+        }
+        
+        // Process specifications
         let specifications: Record<string, any> = {}
         const parsedSpecs = safeParseJson(p?.specifications || {})
-        if (parsedSpecs && typeof parsedSpecs === "object" && !Array.isArray(parsedSpecs)) specifications = parsedSpecs as Record<string, any>
-        setProduct({ ...p, images, features, firmness, specifications, originalPrice: p?.originalPrice ?? p?.price ?? p?.salePrice })
+        if (parsedSpecs && typeof parsedSpecs === "object" && !Array.isArray(parsedSpecs)) {
+          specifications = parsedSpecs as Record<string, any>
+        }
+        
+        const processedProduct = {
+          ...p,
+          images,
+          features,
+          firmness,
+          sizes,
+          specifications,
+          originalPrice: p?.originalPrice ?? p?.price ?? p?.salePrice,
+          stock: p?.stock ?? 0
+        }
+        
+        console.log("Final Processed Product:", processedProduct) // Debug log
+        
+        setProduct(processedProduct)
+        
+        // Auto-select first available options
+        if (sizes.length > 0 && !selectedSize) {
+          setSelectedSize(sizes[0])
+        }
+        if (firmness.length > 0 && !selectedFirmness) {
+          setSelectedFirmness(firmness[0])
+        }
+        
       } catch (e: any) {
+        console.error("Fetch Error:", e) // Debug log
         setError(e?.message || "Failed to load product")
-      } finally { setLoading(false) }
+      } finally { 
+        setLoading(false) 
+      }
     }
-    fetchById()
-  }, [params.id])
+    
+    if (id) {
+      fetchById()
+    }
+  }, [params.id, selectedSize, selectedFirmness])
 
   const currentPrice = useMemo(() => {
     if (!product) return 0
     return product.salePrice ?? product.price ?? 0
   }, [product])
 
-  const formatPrice = (price: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0 }).format(price)
+  const formatPrice = (price: number) => 
+    new Intl.NumberFormat("en-IN", { 
+      style: "currency", 
+      currency: "INR", 
+      minimumFractionDigits: 0 
+    }).format(price)
 
   const handleAddToCart = () => {
-    if (!selectedSize || !selectedFirmness) {
-      alert("Please select size and firmness")
+    if (!product) return
+    
+    // Only require selection if options are available
+    const requiresSize = Array.isArray(product.sizes) && product.sizes.length > 0
+    const requiresFirmness = Array.isArray(product.firmness) && product.firmness.length > 0
+    
+    if (requiresSize && !selectedSize) {
+      alert("Please select a size")
       return
     }
-    if (!product) return
+    if (requiresFirmness && !selectedFirmness) {
+      alert("Please select firmness")
+      return
+    }
+    
     addItem({
       id: String(product.id || product._id || params.id),
       name: product.name,
       price: currentPrice,
       originalPrice: product.originalPrice || currentPrice,
-      image: product.images?.[0] || product.mainImage || "/placeholder.svg",
-      size: selectedSize,
-      firmness: selectedFirmness,
+      image: resolveImageSrc(product.images?.[0] || product.mainImage),
+      size: selectedSize || "Standard",
+      firmness: selectedFirmness || "Medium",
     }, quantity)
+    
     router.push("/cart")
   }
 
@@ -132,9 +217,22 @@ export default function ProductDetailFromCategoryPage() {
     if (isInWishlist(id)) {
       removeWishlistItem(id)
     } else {
-      addWishlistItem({ id, name: product.name, price: currentPrice, originalPrice: product.originalPrice || currentPrice, image: product.images?.[0] || product.mainImage || "/placeholder.svg", category: product.category || "Product", rating: product.rating || 0, reviews: product.reviews || 0, inStock: true })
+      addWishlistItem({ 
+        id, 
+        name: product.name, 
+        price: currentPrice, 
+        originalPrice: product.originalPrice || currentPrice, 
+        image: resolveImageSrc(product.images?.[0] || product.mainImage), 
+        category: product.category || "Product", 
+        rating: product.rating || 0, 
+        reviews: product.reviews || 0, 
+        inStock: (product.stock ?? 0) > 0 
+      })
     }
   }
+
+  const productId = String(product?.id || product?._id || params.id)
+  const isWishlisted = product ? isInWishlist(productId) : false
 
   return (
     <div className="min-h-screen bg-background">
@@ -145,65 +243,135 @@ export default function ProductDetailFromCategoryPage() {
           <Button variant="ghost" size="icon" onClick={() => router.back()}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <span className="text-sm text-muted-foreground">Product / {product?.name || "..."}</span>
+          <span className="text-sm text-muted-foreground">
+            Product / {product?.name || "Loading..."}
+          </span>
         </div>
 
         {loading && (
-          <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 mr-2 animate-spin" /> Loading...</div>
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-6 h-6 mr-2 animate-spin" /> 
+            Loading product details...
+          </div>
         )}
+
         {error && (
           <div className="flex items-center justify-center py-20">
             <Card className="p-8 text-center">
               <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-4" />
               <div className="font-semibold mb-2">Failed to load product</div>
               <div className="text-muted-foreground mb-4">{error}</div>
-              <Button onClick={() => router.refresh()}>Retry</Button>
+              <Button onClick={() => window.location.reload()}>Retry</Button>
             </Card>
           </div>
         )}
 
         {!loading && !error && product && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+            {/* Product Images */}
             <div className="space-y-4">
               <div className="relative aspect-square rounded-lg overflow-hidden bg-slate-100">
-                <Image src={resolveImageSrc(product.images?.[activeImage] || product.mainImage)} alt={product.name} fill className="object-cover" />
+                <Image 
+                  src={resolveImageSrc(product.images?.[activeImage] || product.mainImage)} 
+                  alt={product.name} 
+                  fill 
+                  className="object-cover" 
+                />
                 {product.badge && (
-                  <Badge className="absolute top-4 left-4 bg-secondary text-secondary-foreground">{product.badge}</Badge>
+                  <Badge className="absolute top-4 left-4 bg-secondary text-secondary-foreground">
+                    {product.badge}
+                  </Badge>
                 )}
               </div>
-              <div className="flex gap-2">
-                {(product.images || []).map((image, index) => (
-                  <button key={index} onClick={() => setActiveImage(index)} className={`relative w-20 h-20 rounded-lg overflow-hidden border-2 ${activeImage === index ? "border-primary" : "border-transparent"}`}>
-                    <Image src={resolveImageSrc(image)} alt={`${product.name} ${index + 1}`} fill className="object-cover" />
-                  </button>
-                ))}
-              </div>
+              {product.images && product.images.length > 1 && (
+                <div className="flex gap-2 overflow-x-auto">
+                  {product.images.map((image, index) => (
+                    <button 
+                      key={index} 
+                      onClick={() => setActiveImage(index)} 
+                      className={`relative w-20 h-20 rounded-lg overflow-hidden border-2 flex-shrink-0 ${
+                        activeImage === index ? "border-primary" : "border-transparent"
+                      }`}
+                    >
+                      <Image 
+                        src={resolveImageSrc(image)} 
+                        alt={`${product.name} ${index + 1}`} 
+                        fill 
+                        className="object-cover" 
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
+            {/* Product Details */}
             <div className="space-y-6">
               <div>
                 <h1 className="font-playfair text-3xl font-bold mb-2">{product.name}</h1>
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="flex items-center gap-1">
-                    {[...Array(5)].map((_, i) => (
-                      <Star key={i} className={`w-5 h-5 ${i < Math.floor(product.rating || 0) ? "fill-secondary text-secondary" : "text-gray-300"}`} />
-                    ))}
-                    <span className="ml-2 text-sm text-muted-foreground">{product.rating || 0} ({product.reviews || 0} reviews)</span>
+                
+                {(product.rating || product.reviews) && (
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="flex items-center gap-1">
+                      {[...Array(5)].map((_, i) => (
+                        <Star 
+                          key={i} 
+                          className={`w-5 h-5 ${
+                            i < Math.floor(product.rating || 0) 
+                              ? "fill-secondary text-secondary" 
+                              : "text-gray-300"
+                          }`} 
+                        />
+                      ))}
+                      <span className="ml-2 text-sm text-muted-foreground">
+                        {product.rating || 0} ({product.reviews || 0} reviews)
+                      </span>
+                    </div>
                   </div>
-                </div>
-                {product.description && <p className="text-muted-foreground text-lg">{product.description}</p>}
+                )}
+                
+                {product.description && (
+                  <p className="text-muted-foreground text-lg">{product.description}</p>
+                )}
               </div>
 
+              {/* Pricing */}
               <div className="flex items-center gap-4">
-                <span className="text-3xl font-bold text-primary">{formatPrice(currentPrice)}</span>
+                <span className="text-3xl font-bold text-primary">
+                  {formatPrice(currentPrice)}
+                </span>
                 {product.originalPrice && product.originalPrice > currentPrice && (
                   <>
-                    <span className="text-xl text-muted-foreground line-through">{formatPrice(product.originalPrice)}</span>
-                    <Badge variant="destructive">{Math.round(((product.originalPrice - currentPrice) / product.originalPrice) * 100)}% OFF</Badge>
+                    <span className="text-xl text-muted-foreground line-through">
+                      {formatPrice(product.originalPrice)}
+                    </span>
+                    <Badge variant="destructive">
+                      {Math.round(((product.originalPrice - currentPrice) / product.originalPrice) * 100)}% OFF
+                    </Badge>
                   </>
                 )}
               </div>
 
+              {/* Size Selection */}
+              {Array.isArray(product.sizes) && product.sizes.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="font-semibold">Size</h3>
+                  <Select value={selectedSize} onValueChange={setSelectedSize}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select size" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {product.sizes.map((size, index) => (
+                        <SelectItem key={index} value={typeof size === "string" ? size : size?.name || ""}>
+                          {typeof size === "string" ? size : size?.name || ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Firmness Selection */}
               {Array.isArray(product.firmness) && product.firmness.length > 0 && (
                 <div className="space-y-3">
                   <h3 className="font-semibold">Firmness</h3>
@@ -212,39 +380,71 @@ export default function ProductDetailFromCategoryPage() {
                       <SelectValue placeholder="Select firmness" />
                     </SelectTrigger>
                     <SelectContent>
-                      {product.firmness.map((firm) => (
-                        <SelectItem key={firm} value={firm}>{firm}</SelectItem>
+                      {product.firmness.map((firm, index) => (
+                        <SelectItem key={index} value={firm}>
+                          {firm}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
               )}
 
+              {/* Quantity Selection */}
               <div className="space-y-3">
                 <h3 className="font-semibold">Quantity</h3>
                 <div className="flex items-center gap-3">
-                  <Button variant="outline" size="icon" onClick={() => setQuantity(Math.max(1, quantity - 1))} disabled={quantity <= 1}>
+                  <Button 
+                    variant="outline" 
+                    size="icon" 
+                    onClick={() => setQuantity(Math.max(1, quantity - 1))} 
+                    disabled={quantity <= 1}
+                  >
                     <Minus className="h-4 w-4" />
                   </Button>
                   <span className="w-12 text-center font-semibold">{quantity}</span>
-                  <Button variant="outline" size="icon" onClick={() => setQuantity(quantity + 1)}>
+                  <Button 
+                    variant="outline" 
+                    size="icon" 
+                    onClick={() => setQuantity(quantity + 1)}
+                    disabled={product.stock !== undefined && quantity >= product.stock}
+                  >
                     <Plus className="h-4 w-4" />
                   </Button>
                 </div>
+                {product.stock !== undefined && (
+                  <p className="text-sm text-muted-foreground">
+                    {product.stock > 0 ? `${product.stock} in stock` : "Out of stock"}
+                  </p>
+                )}
               </div>
 
+              {/* Action Buttons */}
               <div className="flex gap-4">
-                <Button className="flex-1 bg-primary hover:bg-primary/90" size="lg" onClick={handleAddToCart}>Add to Cart</Button>
+                <Button 
+                  className="flex-1 bg-primary hover:bg-primary/90" 
+                  size="lg" 
+                  onClick={handleAddToCart}
+                  disabled={product.stock === 0}
+                >
+                  {product.stock === 0 ? "Out of Stock" : "Add to Cart"}
+                </Button>
                 <Button variant="outline" size="lg" onClick={toggleWishlist}>
-                  <Heart className={`w-4 h-4 mr-2 ${isInWishlist(String(product.id || product._id || params.id)) ? "fill-red-500 text-red-500" : ""}`} />
-                  {isInWishlist(String(product.id || product._id || params.id)) ? "Wishlisted" : "Wishlist"}
+                  <Heart 
+                    className={`w-4 h-4 mr-2 ${isWishlisted ? "fill-red-500 text-red-500" : ""}`} 
+                  />
+                  {isWishlisted ? "Wishlisted" : "Wishlist"}
                 </Button>
               </div>
 
+              {/* Features */}
               {Array.isArray(product.features) && product.features.length > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {product.features.map((f, i) => (
-                    <div key={i} className="text-muted-foreground text-sm">• {f}</div>
+                  <h3 className="font-semibold col-span-full mb-2">Key Features:</h3>
+                  {product.features.map((feature, index) => (
+                    <div key={index} className="text-muted-foreground text-sm">
+                      • {feature}
+                    </div>
                   ))}
                 </div>
               )}
@@ -252,42 +452,70 @@ export default function ProductDetailFromCategoryPage() {
           </div>
         )}
 
+        {/* Product Details Tabs */}
         {!loading && !error && product && (
           <div className="mt-16">
             <Tabs defaultValue="features" className="w-full">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="features">Features</TabsTrigger>
                 <TabsTrigger value="specifications">Specifications</TabsTrigger>
-                <TabsTrigger value="care">Care</TabsTrigger>
+                <TabsTrigger value="care">Care Instructions</TabsTrigger>
               </TabsList>
+              
               <TabsContent value="features" className="mt-8">
-                <Card><CardContent className="p-8">
-                  <h3 className="text-2xl font-bold mb-6">Key Features</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {(product.features || []).map((f, i) => (
-                      <div key={i} className="text-muted-foreground">{f}</div>
-                    ))}
-                  </div>
-                </CardContent></Card>
+                <Card>
+                  <CardContent className="p-8">
+                    <h3 className="text-2xl font-bold mb-6">Key Features</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {product.features && product.features.length > 0 ? (
+                        product.features.map((feature, index) => (
+                          <div key={index} className="text-muted-foreground">
+                            • {feature}
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-muted-foreground">No features available.</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
               </TabsContent>
+              
               <TabsContent value="specifications" className="mt-8">
-                <Card><CardContent className="p-8">
-                  <h3 className="text-2xl font-bold mb-6">Specifications</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {Object.entries((product.specifications as Record<string, any>) || {}).map(([k, v]) => (
-                      <div key={k} className="flex justify-between py-2 border-b">
-                        <span className="font-medium capitalize">{k.replace(/([A-Z])/g, " $1")}</span>
-                        <span className="text-muted-foreground">{String(v)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent></Card>
+                <Card>
+                  <CardContent className="p-8">
+                    <h3 className="text-2xl font-bold mb-6">Specifications</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {product.specifications && Object.keys(product.specifications).length > 0 ? (
+                        Object.entries(product.specifications as Record<string, any>).map(([key, value]) => (
+                          <div key={key} className="flex justify-between py-2 border-b">
+                            <span className="font-medium capitalize">
+                              {key.replace(/([A-Z])/g, " $1").trim()}
+                            </span>
+                            <span className="text-muted-foreground">{String(value)}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-muted-foreground">No specifications available.</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
               </TabsContent>
+              
               <TabsContent value="care" className="mt-8">
-                <Card><CardContent className="p-8">
-                  <h3 className="text-2xl font-bold mb-6">Care Instructions</h3>
-                  <div className="text-muted-foreground">Spot clean with mild detergent and air dry.</div>
-                </CardContent></Card>
+                <Card>
+                  <CardContent className="p-8">
+                    <h3 className="text-2xl font-bold mb-6">Care Instructions</h3>
+                    <div className="space-y-4 text-muted-foreground">
+                      <p>• Spot clean with mild detergent and cold water</p>
+                      <p>• Air dry completely before use</p>
+                      <p>• Do not machine wash or dry clean</p>
+                      <p>• Keep away from direct sunlight when drying</p>
+                      <p>• Fluff regularly to maintain shape</p>
+                    </div>
+                  </CardContent>
+                </Card>
               </TabsContent>
             </Tabs>
           </div>
@@ -298,5 +526,3 @@ export default function ProductDetailFromCategoryPage() {
     </div>
   )
 }
-
-

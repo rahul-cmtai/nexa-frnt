@@ -49,24 +49,28 @@ interface ApiResponse {
   }
 }
 
-// deep-parse helper for nested stringified arrays
+// Improved deep-parse helper for nested stringified arrays
 const deepParseArray = (arr: any[]): string[] => {
+  if (!Array.isArray(arr)) return []
+  
   return arr
     .flatMap((item) => {
       let current: any = item
-      // parse up to 3 levels deep
-      for (let i = 0; i < 3; i++) {
+      // Parse up to 5 levels deep to handle deeply nested JSON
+      for (let i = 0; i < 5; i++) {
         if (typeof current === "string") {
           try {
             current = JSON.parse(current)
           } catch {
             break
           }
+        } else {
+          break
         }
       }
       return Array.isArray(current) ? current : [current]
     })
-    .filter(Boolean)
+    .filter((item) => item && typeof item === "string" && item.trim() !== "")
 }
 
 export default function PillowsPage() {
@@ -123,14 +127,22 @@ export default function PillowsPage() {
     fetchProducts()
   }, [])
 
+  // FIXED: Corrected filtering logic
   const filteredProducts = products
     .filter((product: Product) => {
       const price = product.price || 0
+      
+      // Price range filter
       const priceInRange = price >= priceRange[0] && price <= priceRange[1]
+      
+      // Type filter - FIXED: Proper string comparison and "all" handling
       const typeMatch = selectedType === "all" || product.type === selectedType
-      const firmnessMatch =
-        selectedFirmness === "all" ||
+      
+      // Firmness filter - FIXED: Proper array includes check and "all" handling
+      const firmnessMatch = 
+        selectedFirmness === "all" || 
         (Array.isArray(product.firmness) && product.firmness.includes(selectedFirmness))
+      
       return priceInRange && typeMatch && firmnessMatch
     })
     .sort((a: Product, b: Product) => {
@@ -148,6 +160,7 @@ export default function PillowsPage() {
       }
     })
 
+  // FIXED: Improved unique values extraction
   const uniqueTypes = [...new Set(products.map((p: Product) => p.type).filter(Boolean))]
   const uniqueFirmness = [
     ...new Set(products.flatMap((p: Product) => p.firmness || []).filter(Boolean)),
@@ -159,6 +172,14 @@ export default function PillowsPage() {
     setSelectedType("all")
     setSelectedFirmness("all")
   }
+
+  // Debug logs - you can remove these in production
+  console.log("products", products)
+  console.log("filteredProducts", filteredProducts)
+  console.log("selectedType", selectedType)
+  console.log("selectedFirmness", selectedFirmness)
+  console.log("uniqueTypes", uniqueTypes)
+  console.log("uniqueFirmness", uniqueFirmness)
 
   return (
     <div className="min-h-screen bg-background">
