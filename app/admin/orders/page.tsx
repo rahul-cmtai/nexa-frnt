@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search, ShoppingCart, Eye } from "lucide-react"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"    
 
 export default function AdminOrders() {
   const { user } = useAuth()
@@ -30,7 +30,7 @@ export default function AdminOrders() {
 
       try {
         // Updated API endpoint
-        const res = await fetch("http://localhost:8000/api/admin/products/leads", {
+        const res = await fetch("${API_BASE}/api/admin/products/leads", {
           headers: { "Content-Type": "application/json" },
           credentials: "include", // if using cookies/session
         })

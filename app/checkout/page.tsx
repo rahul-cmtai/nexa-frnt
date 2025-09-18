@@ -16,6 +16,7 @@ import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ArrowLeft, Truck, Shield, Clock } from "lucide-react"
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
 
 export default function CheckoutPage() {
   const { items, total, itemCount, clearCart } = useCart()
@@ -93,7 +94,7 @@ export default function CheckoutPage() {
       const token = typeof window !== "undefined" ? localStorage.getItem("nexa_rest_token") || localStorage.getItem("accessToken") : null
 
       // Create order via API
-      const orderResponse = await fetch("/api/orders", {
+      const orderResponse = await fetch(`${API_BASE}/api/orders`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -138,7 +139,7 @@ export default function CheckoutPage() {
 
       // Submit to external leads API
       try {
-        const leadsResponse = await fetch("http://localhost:8000/api/leads", {
+        const leadsResponse = await fetch(`${API_BASE}/api/leads`, {
           method: "POST",
           headers: { 
             "Content-Type": "application/json",

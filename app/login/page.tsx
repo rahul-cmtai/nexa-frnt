@@ -24,6 +24,7 @@ export default function LoginPage() {
   const [user, setUser] = useState<any>(null)
   const [showVerify, setShowVerify] = useState(false)
 
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
   // Handle redirect after successful login
   useEffect(() => {
     if (user) {
@@ -44,7 +45,7 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      const res = await fetch("http://localhost:8000/api/v1/auth/login", {
+      const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -87,9 +88,9 @@ export default function LoginPage() {
 
   const handleVerifyOtp = async (otp: string) => {
     setError("")
-    setIsLoading(true)
+    setIsLoading(true)      
     try {
-      const res = await fetch("http://localhost:8000/api/v1/auth/verify-otp", {
+      const res = await fetch(`${API_BASE}/api/v1/auth/verify-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, otp }),

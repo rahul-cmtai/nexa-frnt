@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input"
 // Icons for a richer UI
 import { UserCheck, Search, Phone, Mail, Calendar, Eye, Loader2, AlertCircle, RefreshCw } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE   
+
 
 // Defines the data structure for a single lead using a TypeScript interface.
 // This ensures type safety throughout the component.
@@ -70,7 +72,7 @@ export default function LeadsPage() {
 
       const headers = getApiHeaders()
       // The specific API endpoint to get all leads for an admin.
-      const url = `http://localhost:8000/api/v1/contact/admin`
+      const url = `${API_BASE}/api/v1/contact/admin`
 
       const response = await fetch(url, {
         method: 'GET',
@@ -209,7 +211,7 @@ export default function LeadsPage() {
     try {
       const headers = getApiHeaders()
       // Makes a PUT request to the specific endpoint for the lead being updated.
-      const response = await fetch(`http://localhost:8000/api/v1/contact/admin/${leadId}`, {
+      const response = await fetch(`${API_BASE}/api/v1/contact/admin/${leadId}`, {
         method: "PUT",
         headers,
         body: JSON.stringify({ status: newStatus }),
