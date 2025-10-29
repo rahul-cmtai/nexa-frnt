@@ -43,7 +43,7 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
+      const res = await fetch(`https://nexa-rest.vercel.app/api/v1/auth/login`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -98,7 +98,7 @@ export default function LoginPage() {
     setError("")
     setIsLoading(true)      
     try {
-      const res = await fetch(`${API_BASE}/api/v1/auth/verify-otp`, {
+      const res = await fetch(`https://nexa-rest.vercel.app/api/v1/auth/verify-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, otp }),
