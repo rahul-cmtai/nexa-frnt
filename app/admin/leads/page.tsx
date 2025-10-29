@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 // Icons for a richer UI
 import { UserCheck, Search, Phone, Mail, Calendar, Eye, Loader2, AlertCircle, RefreshCw } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE   
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
 
 
 // Defines the data structure for a single lead using a TypeScript interface.

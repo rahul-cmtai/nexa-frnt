@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search, ShoppingCart, Eye } from "lucide-react"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"    
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
 
 export default function AdminOrders() {
   const { user } = useAuth()
@@ -19,6 +19,18 @@ export default function AdminOrders() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Helper to build auth headers
+  const getApiHeaders = () => {
+    const token = typeof window !== 'undefined'
+      ? (localStorage.getItem("auth_token") || localStorage.getItem("accessToken") || localStorage.getItem("token"))
+      : null
+
+    return {
+      "Content-Type": "application/json",
+      ...(token && { Authorization: `Bearer ${token}` }),
+    }
+  }
 
   // ✅ Fetch Orders from backend
   useEffect(() => {
@@ -29,18 +41,20 @@ export default function AdminOrders() {
       setError(null)
 
       try {
-        // Updated API endpoint
-        const res = await fetch("${API_BASE}/api/admin/products/leads", {
-          headers: { "Content-Type": "application/json" },
-          credentials: "include", // if using cookies/session
+        const res = await fetch(`${API_BASE}/api/v1/orders-leads`, {
+          method: 'GET',
+          headers: getApiHeaders(),
+          credentials: "include",
+          cache: 'no-cache',
         })
 
         if (!res.ok) {
           throw new Error(`HTTP error! status: ${res.status}`)
         }
 
-        const data = await res.json()
-        setOrders(data || [])
+        const json = await res.json()
+        const items = Array.isArray(json) ? json : (Array.isArray(json.data) ? json.data : (Array.isArray(json.items) ? json.items : []))
+        setOrders(items)
       } catch (error) {
         console.error("Error fetching orders:", error)
         setError(error instanceof Error ? error.message : 'Failed to fetch orders')
@@ -65,9 +79,10 @@ export default function AdminOrders() {
   // ✅ Update status (PATCH API)
   const handleStatusUpdate = async (orderId: string, newStatus: string) => {
     try {
-      const response = await fetch(`${API_URL}/admin/products/leads/${orderId}`, {
+      const response = await fetch(`${API_BASE}/api/v1/orders-leads/${orderId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: getApiHeaders(),
+        credentials: "include",
         body: JSON.stringify({ status: newStatus }),
       })
       
@@ -76,13 +91,17 @@ export default function AdminOrders() {
       }
       
       // Refresh orders
-      const res = await fetch(`${API_URL}/admin/products/leads`, {
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch(`${API_BASE}/api/v1/orders-leads`, {
+        method: 'GET',
+        headers: getApiHeaders(),
+        credentials: "include",
+        cache: 'no-cache',
       })
       
       if (res.ok) {
-        const data = await res.json()
-        setOrders(data || [])
+        const json = await res.json()
+        const items = Array.isArray(json) ? json : (Array.isArray(json.data) ? json.data : (Array.isArray(json.items) ? json.items : []))
+        setOrders(items)
       }
     } catch (error) {
       console.error("Error updating status:", error)

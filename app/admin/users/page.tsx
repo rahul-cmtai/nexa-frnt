@@ -52,11 +52,11 @@ export default function UsersPage() {
         setIsLoading(true)
         setError(null)
 
-        const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000/api/v1").replace(/\/+$/, "")
+        const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000").replace(/\/+$/, "")
         const token = localStorage.getItem("accessToken")
 
         // Construct URL with search query parameter if it exists
-        const url = new URL(`${API_BASE}/admin/users`)
+        const url = new URL(`${API_BASE}/api/v1/admin/users`)
         if (debouncedSearchTerm) {
           url.searchParams.append("search", debouncedSearchTerm)
         }

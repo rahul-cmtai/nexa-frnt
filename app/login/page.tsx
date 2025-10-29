@@ -28,15 +28,13 @@ export default function LoginPage() {
   // Handle redirect after successful login
   useEffect(() => {
     if (user) {
-      if (user === "admin") {
+      const role = user?.role || user
+      if (role === "admin") {
         router.push("/admin")
       } else {
         router.push("/dashboard")
       }
     }
-    console.log("user", user)
-    console.log("admin", user?.role === "admin")
-    console.log("dashboard", user?.role === "user")
   }, [user, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -72,9 +70,19 @@ export default function LoginPage() {
       }
 
       const loggedInUser = (data as any)?.user || (data as any)?.data?.user
+      const token = (data as any)?.token || (data as any)?.data?.token
+      const accessToken = (data as any)?.accessToken || (data as any)?.data?.accessToken || token
+
+      if (accessToken) {
+        try {
+          localStorage.setItem("accessToken", accessToken)
+          localStorage.setItem("nexa_rest_token", accessToken)
+        } catch {}
+      }
+
       if (loggedInUser) {
         localStorage.setItem("nexa_rest_current_user", JSON.stringify(loggedInUser))
-        setUser(loggedInUser.role)
+        setUser(loggedInUser)
         window.dispatchEvent(new Event("auth:changed"))
       }
 

@@ -6,7 +6,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
-import { Star, Heart, Filter, Loader2, AlertCircle } from "lucide-react"
+import { Star, Heart, Filter, Loader2, AlertCircle, Search, ChevronLeft, ChevronRight } from "lucide-react"
+import { Input } from "@/components/ui/input"
 import Image from "next/image"
 import Link from "next/link"
 import { Header } from "@/components/layout/header"
@@ -15,7 +16,7 @@ import { useCart } from "@/contexts/cart-context"
 import { useWishlist } from "@/contexts/wishlist-context"
 import { useRouter } from "next/navigation"
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
 
 interface Product {
   _id: string
@@ -82,10 +83,15 @@ export default function PillowsPage() {
   const [sortBy, setSortBy] = useState<string>("popularity")
   const [selectedType, setSelectedType] = useState<string>("all")
   const [selectedFirmness, setSelectedFirmness] = useState<string>("all")
+  const [searchQuery, setSearchQuery] = useState<string>("")
 
   const [products, setProducts] = useState<Product[]>([])
+  const [allProducts, setAllProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState<number>(1)
+  const [totalPages, setTotalPages] = useState<number>(1)
+  const [totalProducts, setTotalProducts] = useState<number>(0)
 
   const resolveImageSrc = (img: string): string => {
     if (!img) return "/placeholder.svg"
@@ -94,13 +100,27 @@ export default function PillowsPage() {
     return `${API_BASE}${path}`
   }
 
-  const fetchProducts = async (): Promise<void> => {
+  const fetchProducts = async (page: number = 1): Promise<void> => {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch(`${API_BASE}/api/v1/products/category/Pillows`)
+      // Build query parameters for API filtering
+      const params = new URLSearchParams()
+      params.append('category', 'Pillows')
+      params.append('page', page.toString())
+      params.append('limit', '12')
+      
+      if (searchQuery.trim()) {
+        params.append('search', searchQuery.trim())
+      }
+      
+      if (selectedType !== 'all') {
+        params.append('type', selectedType)
+      }
+
+      const response = await fetch(`${API_BASE}/api/v1/products?${params.toString()}`)
       if (!response.ok) throw new Error(`Failed to fetch products: ${response.status}`)
-      const data: ApiResponse = await response.json()
+      const data: any = await response.json()
 
       let productsArray: Product[] = []
       if (data.statusCode === 200 && Array.isArray(data.data?.products)) {
@@ -109,41 +129,48 @@ export default function PillowsPage() {
           features: deepParseArray(p.features || []),
           firmness: deepParseArray(p.firmness || []),
         }))
+        
+        setTotalPages(data.data.totalPages || 1)
+        setTotalProducts(data.data.totalProducts || productsArray.length)
+        setCurrentPage(data.data.currentPage || page)
       } else {
         throw new Error("Invalid API response structure")
       }
 
       setProducts(productsArray)
+      setAllProducts(productsArray)
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Failed to load products"
       setError(errorMessage)
       setProducts([])
+      setAllProducts([])
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    fetchProducts()
+    fetchProducts(currentPage)
+  }, [searchQuery, selectedType])
+
+  useEffect(() => {
+    fetchProducts(1)
   }, [])
 
-  // FIXED: Corrected filtering logic
+  // Client-side filtering for additional filters (price, firmness)
   const filteredProducts = products
     .filter((product: Product) => {
       const price = product.price || 0
       
-      // Price range filter
+      // Price range filter (client-side)
       const priceInRange = price >= priceRange[0] && price <= priceRange[1]
       
-      // Type filter - FIXED: Proper string comparison and "all" handling
-      const typeMatch = selectedType === "all" || product.type === selectedType
-      
-      // Firmness filter - FIXED: Proper array includes check and "all" handling
+      // Firmness filter (client-side)
       const firmnessMatch = 
         selectedFirmness === "all" || 
         (Array.isArray(product.firmness) && product.firmness.includes(selectedFirmness))
       
-      return priceInRange && typeMatch && firmnessMatch
+      return priceInRange && firmnessMatch
     })
     .sort((a: Product, b: Product) => {
       switch (sortBy) {
@@ -160,10 +187,10 @@ export default function PillowsPage() {
       }
     })
 
-  // FIXED: Improved unique values extraction
-  const uniqueTypes = [...new Set(products.map((p: Product) => p.type).filter(Boolean))]
+  // Extract unique values from all products for filters
+  const uniqueTypes = [...new Set(allProducts.map((p: Product) => p.type).filter(Boolean))]
   const uniqueFirmness = [
-    ...new Set(products.flatMap((p: Product) => p.firmness || []).filter(Boolean)),
+    ...new Set(allProducts.flatMap((p: Product) => p.firmness || []).filter(Boolean)),
   ]
 
   const handlePriceRangeChange = (value: number[]) => setPriceRange(value)
@@ -171,6 +198,20 @@ export default function PillowsPage() {
     setPriceRange([0, 100000])
     setSelectedType("all")
     setSelectedFirmness("all")
+    setSearchQuery("")
+    setCurrentPage(1)
+  }
+
+  const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setCurrentPage(1)
+    fetchProducts(1)
+  }
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
+    fetchProducts(page)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   // Debug logs - you can remove these in production
@@ -187,10 +228,24 @@ export default function PillowsPage() {
       <main className="container mx-auto px-4 py-8">
         <div className="text-center mb-12">
           <h1 className="font-playfair text-4xl md:text-5xl font-bold mb-4">Premium Pillows</h1>
-          <p className="text-xl text-muted-foreground max-w-3xl mx-auto text-pretty">
+          <p className="text-xl text-muted-foreground max-w-3xl mx-auto text-pretty mb-6">
             Discover the perfect pillow for your sleep style. Each pillow is designed with premium
             materials and advanced technology for optimal comfort and support.
           </p>
+          
+          {/* Search Bar */}
+          <form onSubmit={handleSearch} className="max-w-2xl mx-auto">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-5 h-5" />
+              <Input
+                type="text"
+                placeholder="Search pillows by name, material, or features..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 pr-4 py-6 text-base"
+              />
+            </div>
+          </form>
         </div>
 
         <div className="flex flex-col lg:flex-row gap-8">
@@ -287,7 +342,7 @@ export default function PillowsPage() {
                   <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
                   <h3 className="text-lg font-semibold mb-2">Error Loading Products</h3>
                   <p className="text-muted-foreground mb-4">{error}</p>
-                  <Button onClick={fetchProducts}>Try Again</Button>
+                  <Button onClick={() => fetchProducts(currentPage)}>Try Again</Button>
                 </Card>
               </div>
             )}
@@ -305,8 +360,9 @@ export default function PillowsPage() {
             )}
 
             {!loading && !error && filteredProducts.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {filteredProducts.map((product: Product) => {
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                  {filteredProducts.map((product: Product) => {
                   const productId = product._id
                   const productPrice = product.price
                   const productOriginalPrice = product.originalPrice || productPrice
@@ -446,7 +502,59 @@ export default function PillowsPage() {
                     </Card>
                   )
                 })}
-              </div>
+                </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex justify-center items-center gap-2 mt-8">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      Previous
+                    </Button>
+                    
+                    <div className="flex gap-1">
+                      {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                        let pageNum: number
+                        if (totalPages <= 5) {
+                          pageNum = i + 1
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i
+                        } else {
+                          pageNum = currentPage - 2 + i
+                        }
+                        
+                        return (
+                          <Button
+                            key={pageNum}
+                            variant={currentPage === pageNum ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => handlePageChange(pageNum)}
+                          >
+                            {pageNum}
+                          </Button>
+                        )
+                      })}
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                    >
+                      Next
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

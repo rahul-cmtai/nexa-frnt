@@ -92,9 +92,9 @@ export default function ContactPage() {
     data.append("message", formData.message)
 
     try {
-      const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000/api/v1").replace(/\/+$/, "")
+      const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000").replace(/\/+$/, "")
       
-      const res = await fetch(`${API_BASE}/contact`, {
+      const res = await fetch(`${API_BASE}/api/v1/contact`, {
         method: "POST",
         // The browser sets the Content-Type header automatically for FormData
         body: data,

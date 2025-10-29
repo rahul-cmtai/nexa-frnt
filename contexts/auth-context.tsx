@@ -37,7 +37,7 @@ const CURRENT_USER_KEY = "nexa_rest_current_user"
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   // Hydrate user from localStorage and listen for auth change events
   useEffect(() => {
@@ -47,6 +47,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(raw ? (JSON.parse(raw) as User) : null)
       } catch {
         setUser(null)
+      } finally {
+        setIsLoading(false)
       }
     }
 

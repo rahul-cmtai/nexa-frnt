@@ -38,7 +38,7 @@ export default function AdminContactsPage() {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
 
   const getApiConfig = () => {
-    const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000/api/v1"
+    const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
     const token = typeof window !== 'undefined' ? localStorage.getItem("accessToken") : null
     
     return {
@@ -58,7 +58,7 @@ export default function AdminContactsPage() {
       setError(null)
 
       const { baseUrl, headers } = getApiConfig()
-      const url = `${baseUrl}/contact/admin`
+      const url = `${baseUrl}/api/v1/contact/admin`
 
       console.log('Fetching contacts from URL:', url)
 
@@ -150,7 +150,7 @@ export default function AdminContactsPage() {
 
     try {
       const { baseUrl, headers } = getApiConfig()
-      const response = await fetch(`${baseUrl}/contact/admin/${id}`, {
+      const response = await fetch(`${baseUrl}/api/v1/contact/admin/${id}`, {
         method: "PUT",
         headers,
         body: JSON.stringify({ status }),
@@ -179,7 +179,7 @@ export default function AdminContactsPage() {
 
     try {
       const { baseUrl, headers } = getApiConfig()
-      const response = await fetch(`${baseUrl}/contact/admin/${id}`, {
+      const response = await fetch(`${baseUrl}/api/v1/contact/admin/${id}`, {
         method: "DELETE",
         headers,
       })

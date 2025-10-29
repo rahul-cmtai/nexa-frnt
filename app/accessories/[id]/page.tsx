@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
@@ -8,25 +8,68 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Star, Heart, ArrowLeft, Plus, Minus, Truck, Shield, RotateCcw, Award } from "lucide-react"
+import { Star, Heart, ArrowLeft, Plus, Minus, Loader2, AlertCircle } from "lucide-react"
 import { Header } from "@/components/layout/header"
 import { Footer } from "@/components/layout/footer"
 import { useCart } from "@/contexts/cart-context"
 import { useWishlist } from "@/contexts/wishlist-context"
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
+
 interface Product {
-  id: number | string
+  id?: string
+  _id?: string
   name: string
-  originalPrice: number
-  salePrice: number
-  rating: number
-  reviews: number
-  image: string
-  badge?: string
-  features: string[]
-  sizes?: string[]
-  firmness?: string[]
   description?: string
+  price?: number
+  salePrice?: number
+  originalPrice?: number
+  rating?: number
+  reviews?: number
+  images?: string[]
+  mainImage?: string
+  badge?: string
+  features?: string[]
+  sizes?: Array<{ name?: string; price?: number; dimensions?: string }> | string[]
+  firmness?: string[] | string
+  specifications?: Record<string, any> | string
+  category?: string
+  stock?: number
+}
+
+const safeParseJson = (value: unknown): unknown => {
+  if (typeof value !== "string") return value
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}
+
+const flattenToStringArray = (input: unknown): string[] => {
+  const result: string[] = []
+  const walk = (val: unknown) => {
+    const maybeParsed = typeof val === "string" && (val.trim().startsWith("[") || val.trim().startsWith("{")) ? safeParseJson(val) : val
+    if (Array.isArray(maybeParsed)) {
+      for (const item of maybeParsed) walk(item)
+    } else if (typeof maybeParsed === "string") { 
+      const t = maybeParsed.trim()
+      if (t) result.push(t)
+    }
+  }
+  walk(input)
+  return Array.from(new Set(result))
+}
+
+const resolveImageSrc = (img: any): string => {
+  if (!img) return "/placeholder.svg"
+  if (typeof img === "string") {
+    if (/^https?:\/\//i.test(img)) return img
+    const path = img.startsWith("/") ? img : `/${img}`
+    return `${API_BASE}${path}`
+  }
+  if (typeof img === "object") return img?.secure_url || img?.url || img?.path || "/placeholder.svg"
+  return "/placeholder.svg"
 }
 
 export default function AccessoryDetailPage() {
@@ -35,127 +78,282 @@ export default function AccessoryDetailPage() {
   const { addItem } = useCart()
   const { addItem: addWishlistItem, removeItem: removeWishlistItem, isInWishlist } = useWishlist()
 
-  // Mirror the list data so details can be resolved client-side by id
-  const products: Product[] = [
-    { id: 1, name: "Flo Weighted Blanket", originalPrice: 8999, salePrice: 5999, rating: 4.8, reviews: 1247, image: "/person-sleeping-comfortably-on-mattress.jpg", badge: "Best Seller", features: ["Deep Pressure Therapy", "Breathable", "Machine Washable"], sizes: ["Single", "Double", "Queen", "King"], description: "Premium weighted blanket for deep sleep." },
-    { id: 2, name: "Flo Fitted Bedsheets", originalPrice: 3999, salePrice: 2499, rating: 4.9, reviews: 892, image: "/luxury-bedroom-with-premium-mattress--modern-minim.jpg", badge: "Premium", features: ["100% Cotton", "Deep Pockets", "Wrinkle Resistant"], sizes: ["Single", "Double", "Queen", "King"], description: "Soft, breathable fitted bedsheets." },
-    { id: 3, name: "Flo Cooling Weighted Blanket", originalPrice: 11999, salePrice: 7999, rating: 4.7, reviews: 634, image: "/peaceful-bedroom-setup-with-optimal-sleep-hygie.jpg", badge: "Cooling Tech", features: ["Advanced Cooling", "Temperature Control", "Hypoallergenic"], sizes: ["Double", "Queen", "King"], description: "Stay cool while you sleep." },
-    { id: 4, name: "Flo Organic Bedsheet Set", originalPrice: 5999, salePrice: 3999, rating: 4.6, reviews: 456, image: "/peaceful-bedroom-setup-for-good-sleep.jpg", badge: "Eco-Friendly", features: ["Organic Cotton", "Chemical-Free", "Set of 4"], sizes: ["Double", "Queen", "King"], description: "Eco-friendly organic bedsheets." },
-    { id: 5, name: "Flo Bamboo Bedsheets", originalPrice: 4999, salePrice: 3499, rating: 4.8, reviews: 321, image: "/luxury-bedroom-with-premium-mattress--modern-minim.jpg", badge: "Antimicrobial", features: ["Bamboo Fiber", "Antimicrobial", "Moisture Wicking"], sizes: ["Single", "Double", "Queen", "King"], description: "Luxurious bamboo bedsheets." },
-    { id: 6, name: "Flo Silk Bedsheet Set", originalPrice: 15999, salePrice: 10999, rating: 4.7, reviews: 789, image: "/person-sleeping-comfortably-on-mattress.jpg", badge: "Luxury", features: ["100% Mulberry Silk", "Temperature Regulating", "Set of 4"], sizes: ["Double", "Queen", "King"], description: "Ultimate luxury silk bedsheets." },
-  ]
-
-  const resolved = products.find((p) => String(p.id) === String(params.id)) || null
-  const [product] = useState<Product | null>(resolved)
+  const [product, setProduct] = useState<Product | null>(null)
+  const [loading, setLoading] = useState<boolean>(true)
+  const [error, setError] = useState<string | null>(null)
   const [selectedSize, setSelectedSize] = useState("")
   const [selectedFirmness, setSelectedFirmness] = useState("")
   const [quantity, setQuantity] = useState(1)
   const [activeImage, setActiveImage] = useState(0)
 
-  const currentPrice = useMemo(() => product?.salePrice ?? 0, [product])
-  const galleryImages = useMemo(() => {
-    if (!product) return [] as string[]
-    const dummies = [
-      "/luxury-bedroom-with-premium-mattress--modern-minim.jpg",
-      "/peaceful-bedroom-setup-for-good-sleep.jpg",
-      "/peaceful-bedroom-setup-with-optimal-sleep-hygie.jpg",
-    ]
-    const unique = Array.from(new Set([product.image, ...dummies].filter(Boolean))) as string[]
-    return unique
+  useEffect(() => {
+    const id = String(params.id)
+    const fetchById = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/products/${id}`)
+        if (!res.ok) throw new Error(`Failed to fetch product: ${res.status}`)
+        const body = await res.json()
+        
+        // Handle different API response structures
+        const p: Product = body?.data?.product || body?.product || body?.data || body
+        
+        console.log("Raw API Response:", body) // Debug log
+        console.log("Processed Product:", p) // Debug log
+        
+        // Process images
+        const images = Array.isArray(p?.images) ? p.images : []
+        
+        // Process features with better error handling
+        const features = Array.isArray(p?.features) 
+          ? flattenToStringArray(p.features) 
+          : typeof p?.features === "string" 
+          ? flattenToStringArray([p.features]) 
+          : []
+        
+        // Process firmness with better error handling
+        const firmness = Array.isArray(p?.firmness) 
+          ? flattenToStringArray(p.firmness) 
+          : typeof p?.firmness === "string" 
+          ? flattenToStringArray([p.firmness]) 
+          : []
+        
+        // Process sizes - handle both string arrays and object arrays
+        let sizes: string[] = []
+        if (Array.isArray(p?.sizes)) {
+          sizes = p.sizes.map(size => 
+            typeof size === "string" ? size : size?.name || ""
+          ).filter(Boolean)
+        }
+        
+        // Process specifications
+        let specifications: Record<string, any> = {}
+        const parsedSpecs = safeParseJson(p?.specifications || {})
+        if (parsedSpecs && typeof parsedSpecs === "object" && !Array.isArray(parsedSpecs)) {
+          specifications = parsedSpecs as Record<string, any>
+        }
+        
+        const processedProduct = {
+          ...p,
+          images,
+          features,
+          firmness,
+          sizes,
+          specifications,
+          originalPrice: p?.originalPrice ?? p?.price ?? p?.salePrice,
+          stock: p?.stock ?? 0
+        }
+        
+        console.log("Final Processed Product:", processedProduct) // Debug log
+        
+        setProduct(processedProduct)
+        
+        // Auto-select first available options
+        if (sizes.length > 0 && !selectedSize) {
+          setSelectedSize(sizes[0])
+        }
+        if (firmness.length > 0 && !selectedFirmness) {
+          setSelectedFirmness(firmness[0])
+        }
+        
+      } catch (e: any) {
+        console.error("Fetch Error:", e) // Debug log
+        setError(e?.message || "Failed to load product")
+      } finally { 
+        setLoading(false) 
+      }
+    }
+    
+    if (id) {
+      fetchById()
+    }
+  }, [params.id, selectedSize, selectedFirmness])
+
+  const currentPrice = useMemo(() => {
+    if (!product) return 0
+    return product.salePrice ?? product.price ?? 0
   }, [product])
 
-  const formatPrice = (price: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0 }).format(price)
+  const formatPrice = (price: number) => 
+    new Intl.NumberFormat("en-IN", { 
+      style: "currency", 
+      currency: "INR", 
+      minimumFractionDigits: 0 
+    }).format(price)
 
   const handleAddToCart = () => {
     if (!product) return
+    
+    // Only require selection if options are available
+    const requiresSize = Array.isArray(product.sizes) && product.sizes.length > 0
+    const requiresFirmness = Array.isArray(product.firmness) && product.firmness.length > 0
+    
+    if (requiresSize && !selectedSize) {
+      alert("Please select a size")
+      return
+    }
+    if (requiresFirmness && !selectedFirmness) {
+      alert("Please select firmness")
+      return
+    }
+    
     addItem({
-      id: String(product.id),
+      id: String(product.id || product._id || params.id),
       name: product.name,
       price: currentPrice,
-      originalPrice: product.originalPrice,
-      image: product.image,
-      size: selectedSize,
-      firmness: selectedFirmness,
+      originalPrice: product.originalPrice || currentPrice,
+      image: resolveImageSrc(product.images?.[0] || product.mainImage),
+      size: selectedSize || "Standard",
+      firmness: selectedFirmness || "Medium",
     }, quantity)
+    
     router.push("/cart")
   }
 
   const toggleWishlist = () => {
     if (!product) return
-    const id = String(product.id)
-    if (isInWishlist(id)) removeWishlistItem(id)
-    else addWishlistItem({ id, name: product.name, price: currentPrice, originalPrice: product.originalPrice, image: product.image, category: "Accessories", rating: product.rating, reviews: product.reviews, inStock: true })
+    const id = String(product.id || product._id || params.id)
+    if (isInWishlist(id)) {
+      removeWishlistItem(id)
+    } else {
+      addWishlistItem({ 
+        id, 
+        name: product.name, 
+        price: currentPrice, 
+        originalPrice: product.originalPrice || currentPrice, 
+        image: resolveImageSrc(product.images?.[0] || product.mainImage), 
+        category: product.category || "Accessories", 
+        rating: product.rating || 0, 
+        reviews: product.reviews || 0, 
+        inStock: (product.stock ?? 0) > 0 
+      })
+    }
   }
+
+  const productId = String(product?.id || product?._id || params.id)
+  const isWishlisted = product ? isInWishlist(productId) : false
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
+
       <main className="container mx-auto px-4 py-8">
         <div className="flex items-center gap-2 mb-6">
           <Button variant="ghost" size="icon" onClick={() => router.back()}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <span className="text-sm text-muted-foreground">Product / {product?.name || "..."}</span>
+          <span className="text-sm text-muted-foreground">
+            Product / {product?.name || "Loading..."}
+          </span>
         </div>
 
-        {!product ? (
-          <div className="text-center text-muted-foreground py-20">No product data. Go back and try again.</div>
-        ) : (
+        {loading && (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-6 h-6 mr-2 animate-spin" /> 
+            Loading product details...
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-center justify-center py-20">
+            <Card className="p-8 text-center">
+              <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-4" />
+              <div className="font-semibold mb-2">Failed to load product</div>
+              <div className="text-muted-foreground mb-4">{error}</div>
+              <Button onClick={() => window.location.reload()}>Retry</Button>
+            </Card>
+          </div>
+        )}
+
+        {!loading && !error && product && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+            {/* Product Images */}
             <div className="space-y-4">
               <div className="relative aspect-square rounded-lg overflow-hidden bg-slate-100">
-                <Image
-                  src={galleryImages[activeImage] || "/placeholder.svg"}
-                  alt={product.name}
-                  fill
-                  className="object-cover"
+                <Image 
+                  src={resolveImageSrc(product.images?.[activeImage] || product.mainImage)} 
+                  alt={product.name} 
+                  fill 
+                  className="object-cover" 
                 />
-                {product.badge && <Badge className="absolute top-4 left-4 bg-secondary text-secondary-foreground">{product.badge}</Badge>}
+                {product.badge && (
+                  <Badge className="absolute top-4 left-4 bg-secondary text-secondary-foreground">
+                    {product.badge}
+                  </Badge>
+                )}
               </div>
-              {/* Thumbnails - single image fallback */}
-              <div className="flex gap-2">
-                {galleryImages.map((img, index) => (
-                  <button
-                    key={index}
-                    onClick={() => setActiveImage(index)}
-                    className={`relative w-20 h-20 rounded-lg overflow-hidden border-2 ${activeImage === index ? "border-primary" : "border-transparent"}`}
-                  >
-                    <Image src={img || "/placeholder.svg"} alt={`${product.name} ${index + 1}`} fill className="object-cover" />
-                  </button>
-                ))}
-              </div>
+              {product.images && product.images.length > 1 && (
+                <div className="flex gap-2 overflow-x-auto">
+                  {product.images.map((image, index) => (
+                    <button 
+                      key={index} 
+                      onClick={() => setActiveImage(index)} 
+                      className={`relative w-20 h-20 rounded-lg overflow-hidden border-2 flex-shrink-0 ${
+                        activeImage === index ? "border-primary" : "border-transparent"
+                      }`}
+                    >
+                      <Image 
+                        src={resolveImageSrc(image)} 
+                        alt={`${product.name} ${index + 1}`} 
+                        fill 
+                        className="object-cover" 
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
+            {/* Product Details */}
             <div className="space-y-6">
               <div>
                 <h1 className="font-playfair text-3xl font-bold mb-2">{product.name}</h1>
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="flex items-center gap-1">
-                    {[...Array(5)].map((_, i) => (
-                      <Star
-                        key={i}
-                        className={`w-5 h-5 ${i < Math.floor(product.rating) ? "fill-secondary text-secondary" : "text-gray-300"}`}
-                      />
-                    ))}
-                    <span className="ml-2 text-sm text-muted-foreground">
-                      {product.rating} ({product.reviews} reviews)
-                    </span>
+                
+                {(product.rating || product.reviews) && (
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="flex items-center gap-1">
+                      {[...Array(5)].map((_, i) => (
+                        <Star 
+                          key={i} 
+                          className={`w-5 h-5 ${
+                            i < Math.floor(product.rating || 0) 
+                              ? "fill-secondary text-secondary" 
+                              : "text-gray-300"
+                          }`} 
+                        />
+                      ))}
+                      <span className="ml-2 text-sm text-muted-foreground">
+                        {product.rating || 0} ({product.reviews || 0} reviews)
+                      </span>
+                    </div>
                   </div>
-                </div>
-                {product.description && <p className="text-muted-foreground text-lg">{product.description}</p>}
+                )}
+                
+                {product.description && (
+                  <p className="text-muted-foreground text-lg">{product.description}</p>
+                )}
               </div>
 
               {/* Pricing */}
               <div className="flex items-center gap-4">
-                <span className="text-3xl font-bold text-primary">{formatPrice(currentPrice)}</span>
-                <span className="text-xl text-muted-foreground line-through">{formatPrice(product.originalPrice)}</span>
-                <Badge variant="destructive">
-                  {Math.round(((product.originalPrice - currentPrice) / product.originalPrice) * 100)}% OFF
-                </Badge>
+                <span className="text-3xl font-bold text-primary">
+                  {formatPrice(currentPrice)}
+                </span>
+                {product.originalPrice && product.originalPrice > currentPrice && (
+                  <>
+                    <span className="text-xl text-muted-foreground line-through">
+                      {formatPrice(product.originalPrice)}
+                    </span>
+                    <Badge variant="destructive">
+                      {Math.round(((product.originalPrice - currentPrice) / product.originalPrice) * 100)}% OFF
+                    </Badge>
+                  </>
+                )}
               </div>
 
-              {/* Optional selectors */}
-              {!!product.sizes?.length && (
+              {/* Size Selection */}
+              {Array.isArray(product.sizes) && product.sizes.length > 0 && (
                 <div className="space-y-3">
                   <h3 className="font-semibold">Size</h3>
                   <Select value={selectedSize} onValueChange={setSelectedSize}>
@@ -163,16 +361,18 @@ export default function AccessoryDetailPage() {
                       <SelectValue placeholder="Select size" />
                     </SelectTrigger>
                     <SelectContent>
-                      {product.sizes.map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {s}
+                      {product.sizes.map((size, index) => (
+                        <SelectItem key={index} value={typeof size === "string" ? size : size?.name || ""}>
+                          {typeof size === "string" ? size : size?.name || ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
               )}
-              {!!product.firmness?.length && (
+
+              {/* Firmness Selection */}
+              {Array.isArray(product.firmness) && product.firmness.length > 0 && (
                 <div className="space-y-3">
                   <h3 className="font-semibold">Firmness</h3>
                   <Select value={selectedFirmness} onValueChange={setSelectedFirmness}>
@@ -180,131 +380,140 @@ export default function AccessoryDetailPage() {
                       <SelectValue placeholder="Select firmness" />
                     </SelectTrigger>
                     <SelectContent>
-                      {product.firmness.map((firm) => (
-                        <SelectItem key={firm} value={firm}>{firm}</SelectItem>
+                      {product.firmness.map((firm, index) => (
+                        <SelectItem key={index} value={firm}>
+                          {firm}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
               )}
 
-              {/* Quantity */}
+              {/* Quantity Selection */}
               <div className="space-y-3">
                 <h3 className="font-semibold">Quantity</h3>
                 <div className="flex items-center gap-3">
-                  <Button variant="outline" size="icon" onClick={() => setQuantity(Math.max(1, quantity - 1))} disabled={quantity <= 1}>
+                  <Button 
+                    variant="outline" 
+                    size="icon" 
+                    onClick={() => setQuantity(Math.max(1, quantity - 1))} 
+                    disabled={quantity <= 1}
+                  >
                     <Minus className="h-4 w-4" />
                   </Button>
                   <span className="w-12 text-center font-semibold">{quantity}</span>
-                  <Button variant="outline" size="icon" onClick={() => setQuantity(quantity + 1)}>
+                  <Button 
+                    variant="outline" 
+                    size="icon" 
+                    onClick={() => setQuantity(quantity + 1)}
+                    disabled={product.stock !== undefined && quantity >= product.stock}
+                  >
                     <Plus className="h-4 w-4" />
                   </Button>
                 </div>
+                {product.stock !== undefined && (
+                  <p className="text-sm text-muted-foreground">
+                    {product.stock > 0 ? `${product.stock} in stock` : "Out of stock"}
+                  </p>
+                )}
               </div>
 
-              {/* Actions */}
+              {/* Action Buttons */}
               <div className="flex gap-4">
-                <Button className="flex-1 bg-primary hover:bg-primary/90" size="lg" onClick={handleAddToCart}>
-                  Add to Cart
+                <Button 
+                  className="flex-1 bg-primary hover:bg-primary/90" 
+                  size="lg" 
+                  onClick={handleAddToCart}
+                  disabled={product.stock === 0}
+                >
+                  {product.stock === 0 ? "Out of Stock" : "Add to Cart"}
                 </Button>
                 <Button variant="outline" size="lg" onClick={toggleWishlist}>
-                  <Heart className={`w-4 h-4 mr-2 ${isInWishlist(String(product.id)) ? "fill-red-500 text-red-500" : ""}`} />
-                  {isInWishlist(String(product.id)) ? "Wishlisted" : "Wishlist"}
+                  <Heart 
+                    className={`w-4 h-4 mr-2 ${isWishlisted ? "fill-red-500 text-red-500" : ""}`} 
+                  />
+                  {isWishlisted ? "Wishlisted" : "Wishlist"}
                 </Button>
               </div>
 
-              {/* Trust badges */}
-              <div className="grid grid-cols-2 gap-4 pt-6 border-t">
-                <div className="flex items-center gap-3">
-                  <Truck className="w-6 h-6 text-green-600" />
-                  <div>
-                    <p className="font-medium text-sm">Fast Delivery</p>
-                    <p className="text-xs text-muted-foreground">Within 7 days</p>
-                  </div>
+              {/* Features */}
+              {Array.isArray(product.features) && product.features.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <h3 className="font-semibold col-span-full mb-2">Key Features:</h3>
+                  {product.features.map((feature, index) => (
+                    <div key={index} className="text-muted-foreground text-sm">
+                      • {feature}
+                    </div>
+                  ))}
                 </div>
-                <div className="flex items-center gap-3">
-                  <Shield className="w-6 h-6 text-blue-600" />
-                  <div>
-                    <p className="font-medium text-sm">Warranty</p>
-                    <p className="text-xs text-muted-foreground">Quality assured</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <RotateCcw className="w-6 h-6 text-purple-600" />
-                  <div>
-                    <p className="font-medium text-sm">Easy Returns</p>
-                    <p className="text-xs text-muted-foreground">Hassle-free</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Award className="w-6 h-6 text-orange-600" />
-                  <div>
-                    <p className="font-medium text-sm">Premium Quality</p>
-                    <p className="text-xs text-muted-foreground">Trusted materials</p>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         )}
 
-        {!!product && (
+        {/* Product Details Tabs */}
+        {!loading && !error && product && (
           <div className="mt-16">
             <Tabs defaultValue="features" className="w-full">
-              <TabsList className="grid w-full grid-cols-4">
+              <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="features">Features</TabsTrigger>
                 <TabsTrigger value="specifications">Specifications</TabsTrigger>
-                <TabsTrigger value="reviews">Reviews</TabsTrigger>
-                <TabsTrigger value="care">Care Guide</TabsTrigger>
+                <TabsTrigger value="care">Care Instructions</TabsTrigger>
               </TabsList>
-
+              
               <TabsContent value="features" className="mt-8">
                 <Card>
                   <CardContent className="p-8">
                     <h3 className="text-2xl font-bold mb-6">Key Features</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {product.features.map((feature, index) => (
-                        <div key={index} className="flex items-start gap-3">
-                          <div className="w-2 h-2 rounded-full bg-primary mt-2 flex-shrink-0"></div>
-                          <p className="text-muted-foreground">{feature}</p>
-                        </div>
-                      ))}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {product.features && product.features.length > 0 ? (
+                        product.features.map((feature, index) => (
+                          <div key={index} className="text-muted-foreground">
+                            • {feature}
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-muted-foreground">No features available.</p>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
               </TabsContent>
-
+              
               <TabsContent value="specifications" className="mt-8">
                 <Card>
                   <CardContent className="p-8">
                     <h3 className="text-2xl font-bold mb-6">Specifications</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="text-muted-foreground">No specifications available.</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {product.specifications && Object.keys(product.specifications).length > 0 ? (
+                        Object.entries(product.specifications as Record<string, any>).map(([key, value]) => (
+                          <div key={key} className="flex justify-between py-2 border-b">
+                            <span className="font-medium capitalize">
+                              {key.replace(/([A-Z])/g, " $1").trim()}
+                            </span>
+                            <span className="text-muted-foreground">{String(value)}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-muted-foreground">No specifications available.</p>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
               </TabsContent>
-
-              <TabsContent value="reviews" className="mt-8">
-                <Card>
-                  <CardContent className="p-8">
-                    <h3 className="text-2xl font-bold mb-6">Customer Reviews</h3>
-                    <div className="text-center py-8">
-                      <p className="text-muted-foreground">Reviews feature coming soon</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
+              
               <TabsContent value="care" className="mt-8">
                 <Card>
                   <CardContent className="p-8">
                     <h3 className="text-2xl font-bold mb-6">Care Instructions</h3>
-                    <div className="space-y-4">
-                      <div>
-                        <h4 className="font-semibold mb-2">Cleaning</h4>
-                        <p className="text-muted-foreground">Follow label instructions. Machine wash if allowed.</p>
-                      </div>
+                    <div className="space-y-4 text-muted-foreground">
+                      <p>• Follow care label instructions carefully</p>
+                      <p>• Machine wash on gentle cycle with cold water</p>
+                      <p>• Use mild detergent, avoid bleach and fabric softener</p>
+                      <p>• Tumble dry on low heat or air dry completely</p>
+                      <p>• Iron on low heat if needed, avoid high temperatures</p>
+                      <p>• Store in a cool, dry place when not in use</p>
                     </div>
                   </CardContent>
                 </Card>
@@ -313,10 +522,8 @@ export default function AccessoryDetailPage() {
           </div>
         )}
       </main>
+
       <Footer />
     </div>
   )
 }
-
-
-

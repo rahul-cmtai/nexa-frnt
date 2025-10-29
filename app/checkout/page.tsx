@@ -24,6 +24,7 @@ export default function CheckoutPage() {
   const router = useRouter()
 
   const [isLoading, setIsLoading] = useState(false)
+  const [showThankYou, setShowThankYou] = useState(false)
   const [processingFee] = useState(0)
   const [error, setError] = useState("")
   const [formData, setFormData] = useState({
@@ -44,10 +45,10 @@ export default function CheckoutPage() {
   })
 
   useEffect(() => {
-    if (items.length === 0) {
+    if (items.length === 0 && !showThankYou) {
       router.push("/cart")
     }
-  }, [items.length, router])
+  }, [items.length, showThankYou, router])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target
@@ -64,56 +65,10 @@ export default function CheckoutPage() {
     setIsLoading(true)
 
     try {
-      // Create order first
-      const orderData = {
-        userId: user?.id || "guest",
-        userEmail: formData.email,
-        userName: `${formData.firstName} ${formData.lastName}`,
-        items: items.map((item) => ({
-          productId: item.id,
-          productName: item.name,
-          size: item.size,
-          firmness: item.firmness,
-          quantity: item.quantity,
-          price: item.price,
-        })),
-        total: total + processingFee,
-        shippingAddress: {
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          address: formData.address,
-          city: formData.city,
-          state: formData.state,
-          pincode: formData.pincode,
-          phone: formData.phone,
-        },
-        paymentMethod: "cod",
-      }
-
       // Get authentication token
       const token = typeof window !== "undefined" ? localStorage.getItem("nexa_rest_token") || localStorage.getItem("accessToken") : null
 
-      // Create order via API
-      const orderResponse = await fetch(`${API_BASE}/api/orders`, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          ...(token && { "Authorization": `Bearer ${token}` })
-        },
-        body: JSON.stringify(orderData),
-      })
-
-      if (!orderResponse.ok) {
-        throw new Error("Failed to create order")
-      }
-
-      const createdOrder = await orderResponse.json()
-      const createdOrderId: string = createdOrder?.data?.id
-      if (!createdOrderId) {
-        throw new Error("Invalid order response")
-      }
-
-      // Submit lead data to external leads API
+      // Submit lead data to external orders-leads API
       const leadData = {
         firstName: formData.firstName,
         lastName: formData.lastName,
@@ -134,12 +89,14 @@ export default function CheckoutPage() {
           price: item.price,
         })),
         total: total + processingFee,
-        orderId: createdOrderId,
+        // orderId intentionally omitted because orders are not created here
+        source: "checkout_form",
+        notes: "",
       }
 
-      // Submit to external leads API
+      // Submit to external orders-leads API
       try {
-        const leadsResponse = await fetch(`${API_BASE}/api/leads`, {
+        const leadsResponse = await fetch(`${API_BASE}/api/v1/orders-leads`, {
           method: "POST",
           headers: { 
             "Content-Type": "application/json",
@@ -151,18 +108,21 @@ export default function CheckoutPage() {
         if (leadsResponse.ok) {
           const leadsResult = await leadsResponse.json()
           console.log("Lead submitted successfully:", leadsResult)
+          // Show thank you, then clear cart and redirect
+          setShowThankYou(true)
+          clearCart()
+          setTimeout(() => {
+            router.push("/")
+          }, 3000)
         } else {
           const errorData = await leadsResponse.json().catch(() => ({}))
           console.warn("Failed to submit lead data:", leadsResponse.status, errorData)
+          throw new Error(errorData?.message || "Failed to submit lead data")
         }
       } catch (leadsError) {
         console.warn("Leads API error:", leadsError)
-        // Don't break the order flow if leads submission fails
+        throw leadsError
       }
-
-      // Clear cart and redirect to home
-      clearCart()
-      router.push("/")
     } catch (error: any) {
       setError(error.message || "Something went wrong. Please try again.")
     } finally {
@@ -180,12 +140,51 @@ export default function CheckoutPage() {
 
   const steps = [{ id: 1, name: "Shipping", icon: Truck }]
 
-  if (items.length === 0) {
+  if (items.length === 0 && !showThankYou) {
     return null
   }
 
   return (
     <div className="min-h-screen bg-slate-50">
+      {showThankYou && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-700/80 via-blue-500/70 to-yellow-400/70" />
+          <div className="absolute inset-0 backdrop-blur-sm" />
+
+          {/* simple confetti */}
+          <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+            <span className="confetti" style={{ left: "12%", animationDelay: "0s" }} />
+            <span className="confetti" style={{ left: "28%", animationDelay: ".15s" }} />
+            <span className="confetti" style={{ left: "44%", animationDelay: ".3s" }} />
+            <span className="confetti" style={{ left: "60%", animationDelay: ".45s" }} />
+            <span className="confetti" style={{ left: "76%", animationDelay: ".6s" }} />
+            <span className="confetti" style={{ left: "88%", animationDelay: ".75s" }} />
+          </div>
+
+          <div className="relative mx-auto max-w-md scale-in rounded-2xl bg-white/95 p-8 text-center shadow-2xl ring-1 ring-black/5">
+            <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-yellow-100 to-blue-100 shadow-inner">
+              <span className="text-5xl leading-none animate-bounce-slow" role="img" aria-label="thank you">🙏</span>
+            </div>
+            <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Thank you for your order!</h2>
+            <p className="mt-2 text-slate-600">We truly appreciate it. Redirecting you home…</p>
+          </div>
+
+          <style jsx>{`
+            .scale-in { animation: popIn 380ms cubic-bezier(.18,.89,.32,1.28) both; }
+            @keyframes popIn { 0% { transform: scale(.8); opacity: 0 } 100% { transform: scale(1); opacity: 1 } }
+            .animate-bounce-slow { animation: bounce 1.8s infinite; }
+            @keyframes bounce { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-6px) } }
+            .confetti { position: absolute; top: -10%; width: 10px; height: 14px; border-radius: 2px; animation: fall 2.2s linear infinite; }
+            .confetti:nth-child(1){ background:#3b82f6 }
+            .confetti:nth-child(2){ background:#60a5fa }
+            .confetti:nth-child(3){ background:#2563eb }
+            .confetti:nth-child(4){ background:#facc15 }
+            .confetti:nth-child(5){ background:#f59e0b }
+            .confetti:nth-child(6){ background:#fde047 }
+            @keyframes fall { 0% { transform: translateY(-10%) rotate(0deg) } 100% { transform: translateY(120vh) rotate(360deg) } }
+          `}</style>
+        </div>
+      )}
       <div className="max-w-6xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">

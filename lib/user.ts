@@ -2,7 +2,7 @@
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || ""
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
 
 function getAuthHeaders(): Record<string, string> {
   if (typeof window === "undefined") return {}
@@ -14,7 +14,7 @@ async function request<T>(path: string, method: HttpMethod = "GET", body?: any):
   const headers: Record<string, string> = { "Content-Type": "application/json" }
   Object.assign(headers, getAuthHeaders())
 
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${API_BASE}/api/v1${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,

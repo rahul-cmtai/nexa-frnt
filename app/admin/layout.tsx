@@ -30,8 +30,6 @@ const sidebarItems = [
   { href: "/admin/products", icon: Package, label: "Products" },
   { href: "/admin/orders", icon: ShoppingCart, label: "Orders" },
   { href: "/admin/blogs", icon: BookOpen, label: "Blogs" },
-  { href: "/admin/services", icon: Settings, label: "Services" },
-  { href: "/admin/testimonials", icon: Star, label: "Testimonials" },
 ]
 
 export default function AdminLayout({
