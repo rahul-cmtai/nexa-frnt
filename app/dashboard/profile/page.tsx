@@ -372,7 +372,7 @@ export default function ProfilePage() {
           </Card>
 
           {/* Account Security */}
-          <Card className="border-blue-200">
+          {/* <Card className="border-blue-200">
             <CardHeader>
               <CardTitle className="text-blue-700">Account Security</CardTitle>
               <CardDescription>Manage your account security settings</CardDescription>
@@ -397,7 +397,7 @@ export default function ProfilePage() {
                 </Button>
               </div>
             </CardContent>
-          </Card>
+          </Card> */}
         </div>
       </div>
     </div>
