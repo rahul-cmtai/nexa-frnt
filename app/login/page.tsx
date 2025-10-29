@@ -143,7 +143,7 @@ export default function LoginPage() {
 
     return (
       <Dialog open={open} onOpenChange={onClose}>
-        <DialogContent>
+        <DialogContent className="w-[92vw] max-w-sm sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Enter OTP</DialogTitle>
           </DialogHeader>
@@ -167,10 +167,10 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-md rounded-none border-0 shadow-none sm:rounded-lg sm:border sm:shadow-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold text-slate-900">Welcome Back</CardTitle>
-          <CardDescription>Sign in to your Nexa Rest account</CardDescription>
+          <CardTitle className="text-xl sm:text-2xl font-bold text-slate-900">Welcome Back</CardTitle>
+          <CardDescription className="text-sm sm:text-base">Sign in to your Nexa Rest account</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
